@@ -426,6 +426,21 @@ impl<T: 'static> EventLoop<T> {
         None => {}
       }
 
+      // Drain the proxy queue on every iteration, not only in the
+      // `EventSource::User` arm. When the wake fd and an fd event (the ndk_glue
+      // pipe, ident 0) are ready in the same epoll batch, `ALooper_pollAll`
+      // returns the fd event and the wake is consumed, so events queued by
+      // `EventLoopProxy::send_event` would otherwise wait for the next unrelated
+      // wake. Backport of tauri-apps/tao#1304.
+      while let Ok(event) = self.receiver.try_recv() {
+        call_event_handler!(
+          event_handler,
+          self.window_target(),
+          control_flow,
+          event::Event::UserEvent(event)
+        );
+      }
+
       call_event_handler!(
         event_handler,
         self.window_target(),
