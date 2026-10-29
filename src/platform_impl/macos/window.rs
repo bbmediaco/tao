@@ -252,7 +252,11 @@ fn create_window(
       defer: NO,
     ];
 
-    Retained::retain(ns_window_ptr).and_then(|r| r.downcast::<NSWindow>().ok()).map(|ns_window| {
+    // `alloc` + `initWithContentRect:…` already returns an owned (+1)
+    // reference, so take it with `from_raw`. `Retained::retain` here added a
+    // second reference that nothing released: every closed window stayed
+    // alive (and in the window server) until the process quit.
+    Retained::from_raw(ns_window_ptr).and_then(|r| r.downcast::<NSWindow>().ok()).map(|ns_window| {
       #[allow(deprecated)]
       {
         *((*ns_window_ptr).get_mut_ivar::<Bool>("focusable")) = attrs.focusable.into();
@@ -688,8 +692,8 @@ impl UnownedWindow {
   pub fn set_focusable(&self, focusable: bool) {
     #[allow(deprecated)] // TODO: Use define_class!
     unsafe {
-      let ns_window =
-        Retained::into_raw(Retained::cast_unchecked::<Object>(self.ns_window.clone()));
+      // A borrowed pointer: `into_raw` of a clone leaked one reference per call.
+      let ns_window = Retained::as_ptr(&self.ns_window) as *mut Object;
       *((*ns_window).get_mut_ivar::<Bool>("focusable")) = focusable.into();
     }
   }
